@@ -6,6 +6,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { WaveformVisualizer } from '@/components/WaveformVisualizer'
+import { RealtimeTranscription } from '@/components/RealtimeTranscription'
 import './App.css'
 
 interface MedicalRecord {
@@ -46,6 +48,9 @@ function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const audioStreamRef = useRef<MediaStream | null>(null)
+  
+  const [realtimeTranscript, setRealtimeTranscript] = useState('')
 
   useEffect(() => {
     return () => {
@@ -64,6 +69,8 @@ function App() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioStreamRef.current = stream
+      
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
       audioChunksRef.current = []
@@ -77,12 +84,17 @@ function App() {
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
         setAudioBlob(audioBlob)
-        stream.getTracks().forEach(track => track.stop())
+        
+        if (audioStreamRef.current) {
+          audioStreamRef.current.getTracks().forEach(track => track.stop())
+          audioStreamRef.current = null
+        }
       }
 
       mediaRecorder.start()
       setIsRecording(true)
       setRecordingTime(0)
+      setRealtimeTranscript('')
       setMessage('録音を開始しました')
       setMessageType('info')
       
@@ -178,22 +190,32 @@ function App() {
     }
   }
 
-  const exportToSheets = async () => {
+  const exportToExcel = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/export-to-sheets', {
+      const response = await fetch('http://localhost:8000/api/export-to-excel', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
       })
-
-      if (!response.ok) {
+      
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = `medical_records_${new Date().toISOString().slice(0, 10)}.xlsx`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        
+        setMessage('Excelファイルをダウンロードしました')
+        setMessageType('success')
+      } else {
         throw new Error('エクスポートに失敗しました')
       }
-
-      await response.json()
-      setMessage('Google Sheetsにエクスポートしました')
-      setMessageType('success')
     } catch (error) {
       setMessage('エクスポート中にエラーが発生しました')
       setMessageType('error')
@@ -353,6 +375,29 @@ function App() {
                 </Button>
               </div>
 
+              {/* Real-time Audio Display */}
+              {isRecording && (
+                <div className="space-y-4 w-full">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-700 mb-2">音声波形</h3>
+                      <WaveformVisualizer 
+                        audioStream={audioStreamRef.current}
+                        isRecording={isRecording}
+                        width={400}
+                        height={100}
+                      />
+                    </div>
+                    <div>
+                      <RealtimeTranscription 
+                        isRecording={isRecording}
+                        onTranscriptUpdate={setRealtimeTranscript}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* 音声処理ボタン */}
               {audioBlob && !isRecording && (
                 <Button
@@ -488,12 +533,12 @@ function App() {
                   </Button>
                   
                   <Button
-                    onClick={exportToSheets}
+                    onClick={exportToExcel}
                     variant="outline"
                     className="border-2 border-green-600 text-green-600 hover:bg-green-50 px-6 py-2 font-semibold"
                   >
                     <FileText className="h-4 w-4 mr-2" />
-                    スプレッドシート出力
+                    Excel出力
                   </Button>
                 </div>
               </div>
