@@ -111,7 +111,7 @@ async def process_with_dify_agent(audio_file_path: str, patient_data: dict = Non
         
         prompt = create_medical_record_prompt(patient_data)
         
-        medical_record = await send_chat_to_dify(prompt, file_id, dify_api_key, dify_api_url, dify_app_id)
+        medical_record = await send_workflow_to_dify(prompt, file_id, dify_api_key, dify_api_url, dify_app_id)
         
         processing_time = time.time() - start_time
         
@@ -141,7 +141,7 @@ async def upload_file_to_dify(audio_file_path: str, api_key: str, api_url: str) 
                 data={'user': 'medical-system'}
             )
             
-            if response.status_code != 200:
+            if response.status_code not in [200, 201]:
                 raise Exception(f"File upload failed: {response.text}")
             
             result = response.json()
@@ -192,9 +192,9 @@ def create_medical_record_prompt(patient_data: dict = None) -> str:
     
     return prompt
 
-async def send_chat_to_dify(prompt: str, file_id: str, api_key: str, api_url: str, app_id: str) -> dict:
+async def send_workflow_to_dify(prompt: str, file_id: str, api_key: str, api_url: str, app_id: str) -> dict:
     """
-    DifyのチャットAPIに音声ファイル付きでメッセージを送信
+    DifyのワークフローAPIに音声ファイル付きでメッセージを送信
     """
     async with httpx.AsyncClient(timeout=60.0) as client:
         headers = {
@@ -203,41 +203,53 @@ async def send_chat_to_dify(prompt: str, file_id: str, api_key: str, api_url: st
         }
         
         data = {
-            "inputs": {},
-            "query": prompt,
+            "inputs": {
+                "audio_file_id": file_id,
+                "prompt": prompt
+            },
             "response_mode": "blocking",
-            "conversation_id": "",
-            "user": "medical-system",
-            "files": [
-                {
-                    "type": "file",
-                    "transfer_method": "remote_url",
-                    "upload_file_id": file_id
-                }
-            ]
+            "user": "medical-system"
         }
         
         response = await client.post(
-            f"{api_url}/chat-messages",
+            f"{api_url}/workflows/run",
             headers=headers,
             json=data
         )
         
         if response.status_code != 200:
-            raise Exception(f"Chat API failed: {response.text}")
+            raise Exception(f"Workflow API failed: {response.text}")
         
         result = response.json()
-        answer = result.get('answer', '')
         
-        try:
-            medical_record = json.loads(answer)
-            return medical_record
-        except json.JSONDecodeError:
-            return parse_text_response_to_medical_record(answer)
+        if 'data' in result and 'outputs' in result['data']:
+            outputs = result['data']['outputs']
+            if 'structured_output' in outputs:
+                structured_data = outputs['structured_output']
+                return convert_workflow_output_to_medical_record(structured_data)
+        
+        return parse_text_response_to_medical_record(str(result))
+
+def convert_workflow_output_to_medical_record(structured_data: dict) -> dict:
+    """
+    Difyワークフローの構造化出力を医療記録形式に変換
+    """
+    return {
+        "patient_id": "AUTO-GENERATED",
+        "consultation_date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "chief_complaint": structured_data.get('subjective', '主訴を確認してください'),
+        "present_illness": structured_data.get('subjective', '現病歴を確認してください'),
+        "physical_examination": structured_data.get('objective', '身体所見を確認してください'),
+        "diagnosis": structured_data.get('assessment', '診断を確認してください'),
+        "prescription": structured_data.get('plan', '処方内容を確認してください'),
+        "guidance": structured_data.get('plan', '指導内容を確認してください'),
+        "next_appointment": "次回予約を確認してください",
+        "notes": f"Dify AI処理完了 - 構造化データから生成"
+    }
 
 def parse_text_response_to_medical_record(text_response: str) -> dict:
     """
-    テキストレスポンスを医療記録形式に変換
+    テキストレスポンスを医療記録形式に変換（フォールバック用）
     """
     return {
         "patient_id": "AUTO-GENERATED",
