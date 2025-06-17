@@ -1,18 +1,28 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import httpx
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import tempfile
 import time
 from dotenv import load_dotenv
+from .services.excel_service import ExcelExportService
+from .services.dify_service import DifyService
+from .services.audio_service import AudioService
 
 load_dotenv()
 
 app = FastAPI(title="音声自動カルテシステム", description="飯田クリニック向け音声自動カルテAPI")
+
+medical_records_db: List[Dict[str, Any]] = []
+
+dify_service = DifyService()
+audio_service = AudioService()
+excel_service = ExcelExportService()
 
 # Disable CORS. Do not remove this for full-stack development.
 app.add_middleware(

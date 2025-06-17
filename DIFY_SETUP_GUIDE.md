@@ -1,4 +1,4 @@
-# Dify エージェント構築手順書 - 音声自動カルテシステム
+# Dify ワークフロー構築手順書 - 音声自動カルテシステム
 
 ## 目次
 1. [Dify アカウント設定](#dify-アカウント設定)
@@ -38,7 +38,7 @@
 2. **アプリケーション設定**:
    ```
    App Name: 音声自動カルテ生成
-   App Type: Agent
+   App Type: Workflow
    Description: 飯田クリニック向け音声診察記録自動生成システム
    ```
 
@@ -64,7 +64,7 @@ Application Settings:
    ```
    Workflow Name: 音声自動カルテ生成ワークフロー
    Description: 飯田クリニック向け診察音声からの医療記録自動生成
-   Type: Chat Workflow
+   Type: Workflow
    ```
 
 #### B. ワークフロー全体設計
@@ -846,10 +846,10 @@ curl -X POST 'https://api.dify.ai/v1/files/upload' \
   -F 'user=test_user'
 ```
 
-#### B. チャットメッセージテスト
+#### B. ワークフロー実行テスト
 ```bash
 # 医療記録生成テスト
-curl -X POST 'https://api.dify.ai/v1/chat-messages' \
+curl -X POST 'https://api.dify.ai/v1/workflows/run' \
   -H 'Authorization: Bearer YOUR_API_KEY' \
   -H 'Content-Type: application/json' \
   -d '{
@@ -857,18 +857,12 @@ curl -X POST 'https://api.dify.ai/v1/chat-messages' \
       "patient_name": "田中太郎",
       "patient_id": "P-2025-001",
       "patient_age": "45",
-      "patient_gender": "男性"
+      "patient_gender": "男性",
+      "audio_file_id": "UPLOADED_FILE_ID",
+      "prompt": "診察音声を解析して医療記録を生成してください"
     },
-    "query": "診察音声を解析して医療記録を生成してください",
     "response_mode": "blocking",
-    "user": "clinic_staff",
-    "files": [
-      {
-        "type": "audio",
-        "transfer_method": "remote_url",
-        "url": "UPLOADED_FILE_URL"
-      }
-    ]
+    "user": "clinic_staff"
   }'
 ```
 
@@ -885,9 +879,9 @@ DIFY_APP_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ### 2. バックエンド統合確認
 ```python
 # medical-records-backend/app/main.py の確認
-async def process_with_dify_agent(audio_file_path: str, patient_data: dict = None):
+async def process_with_workflow(audio_file_path: str, patient_data: dict = None):
     """
-    Difyエージェントで音声を処理して医療記録を生成
+    Difyワークフローで音声を処理して医療記録を生成
     """
     # 実装済みの関数が正しく動作することを確認
 ```
@@ -996,8 +990,8 @@ curl -X GET 'https://api.dify.ai/v1/conversations/{conversation_id}/messages' \
 ```
 主要エンドポイント:
 - POST /v1/files/upload: ファイルアップロード
-- POST /v1/chat-messages: チャットメッセージ送信
-- GET /v1/conversations: 会話履歴取得
+- POST /v1/workflows/run: ワークフロー実行
+- GET /v1/workflows/{workflow_id}/runs: ワークフロー実行履歴取得
 - GET /v1/parameters: アプリケーション設定取得
 ```
 
